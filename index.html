@@ -11,22 +11,21 @@
         video{display:none}
         #landing{position:relative;z-index:200;text-align:center;color:#fff;padding:20px;max-width:400px}
         #app-logo{width:180px;height:180px;margin-bottom:20px;border-radius:50%;border:2px solid #0f0;background:#fff;object-fit:contain;padding:10px}
-        #ui{position:absolute;bottom:20px;width:100%;display:none;flex-direction:column;align-items:center;gap:15px;z-index:100}
-        .controls-row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
-        button.tool-btn{padding:10px 15px;border-radius:20px;border:2px solid #0f0;background:rgba(0,0,0,0.8);color:#0f0;font-weight:700;cursor:pointer}
+        #ui{position:absolute;bottom:20px;width:100%;display:none;flex-direction:column;align-items:center;gap:12px;z-index:100}
+        .controls-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+        button.tool-btn{padding:10px 14px;border-radius:20px;border:2px solid #0f0;background:rgba(0,0,0,0.8);color:#0f0;font-weight:700;cursor:pointer;min-width:45px}
         button.active{background:#0f0;color:#000}
-        
-        /* עיצוב הסליידר */
-        #slider-container{width:80%;max-width:400px;display:flex;flex-direction:column;align-items:center;color:#fff;font-size:12px;gap:5px}
+        #slider-container{width:85%;max-width:400px;display:flex;flex-direction:column;align-items:center;color:#fff;font-size:12px;gap:5px;background:rgba(0,0,0,0.5);padding:10px;border-radius:15px}
         input[type=range]{width:100%;cursor:pointer;accent-color:#0f0}
+        #recBtn.recording{border-color:#ff4444;color:#ff4444;animation:blink 1s infinite}@keyframes blink{50%{opacity:.5}}
     </style>
 </head>
 <body>
     <div id="landing">
         <img src="logo.png" id="app-logo" alt="Logo">
         <h1>SymmetryFace</h1>
-        <p>שליטה ידנית בקו הסימטריה</p>
-        <button onclick="startApp()" style="padding:15px 40px;border-radius:30px;background:#0f0;font-weight:700">התחלה</button>
+        <p>שליטה מלאה בסימטריה</p>
+        <button onclick="startApp()" style="padding:15px 40px;border-radius:30px;background:#0f0;font-weight:700;border:none">התחלה</button>
     </div>
 
     <video id="videoElement" playsinline autoplay muted></video>
@@ -35,15 +34,19 @@
     
     <div id="ui">
         <div id="slider-container">
-            <span>הזז את קו הסימטריה:</span>
             <input type="range" id="symmetrySlider" min="0" max="100" value="50" oninput="manualAdjust(this.value)">
+            <div style="display:flex;justify-content:space-between;width:100%;margin-top:5px">
+                <span>ידני</span>
+                <button onclick="resetAuto()" style="background:none;border:1px solid #3498db;color:#3498db;font-size:10px;border-radius:10px;padding:2px 8px">חזרה לאוטומטי 🔄</button>
+            </div>
         </div>
         <div class="controls-row">
             <button onclick="setMode('none')" id="btnNone" class="tool-btn active">רגיל</button>
             <button onclick="setMode('left')" id="btnLeft" class="tool-btn">שמאל</button>
             <button onclick="setMode('right')" id="btnRight" class="tool-btn">ימין</button>
-            <button onclick="resetAuto()" class="tool-btn" style="border-color:#3498db;color:#3498db">🔄 אוטומטי</button>
+            <button onclick="toggleGuide()" id="btnGuide" class="tool-btn" title="הסתר/הצג קו">👁️</button>
             <button onclick="takeSnapshot()" class="tool-btn" style="border-color:#fff;color:#fff">📸</button>
+            <button onclick="toggleRecording()" id="recBtn" class="tool-btn" style="border-color:#ff4444;color:#ff4444">⏺</button>
         </div>
     </div>
 
@@ -56,15 +59,17 @@
         const slider = document.getElementById('symmetrySlider');
 
         let currentMode = 'none', smoothNoseX = 0, selfieSegmentation;
-        let isManual = false;
+        let isManual = false, showGuide = true, isRecording = false, mediaRecorder, recordedChunks = [];
 
         function manualAdjust(val) {
             isManual = true;
             smoothNoseX = (val / 100) * canvas.width;
         }
 
-        function resetAuto() {
-            isManual = false;
+        function resetAuto() { isManual = false; }
+        function toggleGuide() { 
+            showGuide = !showGuide; 
+            document.getElementById('btnGuide').classList.toggle('active', !showGuide);
         }
 
         async function startApp() {
@@ -121,10 +126,9 @@
                 drawSymmetry(smoothNoseX, canvas.width - smoothNoseX);
             }
 
-            // קו מנחה רק בזמן הזזה ידנית
-            if (isManual) {
+            if (showGuide && (isManual || currentMode !== 'none')) {
                 ctx.beginPath();
-                ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)';
                 ctx.lineWidth = 2;
                 ctx.moveTo(smoothNoseX, 0);
                 ctx.lineTo(smoothNoseX, canvas.height);
@@ -149,9 +153,35 @@
 
         function takeSnapshot() {
             const l = document.createElement('a');
-            l.download = 'Symmetry-Manual.png';
+            l.download = 'SymmetryFace.png';
             l.href = canvas.toDataURL('image/png');
             l.click();
+        }
+
+        function toggleRecording() {
+            const btn = document.getElementById('recBtn');
+            if (!isRecording) {
+                recordedChunks = [];
+                const stream = canvas.captureStream(30);
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                mediaRecorder.ondataavailable = (e) => e.data.size > 0 && recordedChunks.push(e.data);
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'SymmetryFace.webm';
+                    a.click();
+                };
+                mediaRecorder.start();
+                btn.classList.add('recording');
+                btn.innerText = '⏹';
+                isRecording = true;
+            } else {
+                mediaRecorder.stop();
+                btn.classList.remove('recording');
+                btn.innerText = '⏺';
+                isRecording = false;
+            }
         }
     </script>
 </body>
